@@ -1,6 +1,8 @@
 <?php
 
 use WHMCS\Session;
+use WHMCS\User\Admin;
+Use WHMCS\Support\Ticket;
 use WHMCS\Database\Capsule;
 
 /**
@@ -16,7 +18,7 @@ use WHMCS\Database\Capsule;
  * @author     Lee Mahoney <lee@leemahoney.dev>
  * @copyright  Copyright (c) Lee Mahoney 2022
  * @license    MIT License
- * @version    1.0.0
+ * @version    1.0.2
  * @link       https://leemahoney.dev
  */
 
@@ -34,7 +36,7 @@ function auto_mark_ticket($vars) {
 
     # Grab current admin ID
     $adminId = Session::get('adminid');
-
+    
     # Make sure it exists
     if (!$adminId) return;
 
@@ -49,39 +51,37 @@ function auto_mark_ticket($vars) {
             # whmcs should stop this, but better to be safe.
             
             # Get the admins support departments
-            $getAdminSupportDepartments = Capsule::table('tbladmins')->where('id', $adminId)->first();
-            $adminSupportDepartments = explode(',', $getAdminSupportDepartments->supportdepts);
+            $getAdminSupportDepartments = Admin::where('id', $adminId)->first();
+            $adminSupportDepartments    = explode(',', $getAdminSupportDepartments->supportdepts);
 
             # Get the tickets support department
-            $ticketDetails = localAPI('GetTicket', [
-                'ticketid' => $vars['ticketid']
-            ]);
-
-            $ticketDepartment = $ticketDetails['deptid'];
+            $ticketDetails      = Ticket::where('id', $vars['ticketid'])->first();
+            $ticketDepartment   = $ticketDetails->deptid;
 
             # Check if the support department is in the users list of authorized departments
-            if (!in_array($ticketDepartment, $adminSupportDepartments)) {
+            if (in_array($ticketDepartment, $adminSupportDepartments)) {
+
+                Ticket::where('id', $vars['ticketid'])->update([
+                    'status'    => 'In Progress',
+                    'flag'      => $adminId
+                ]);
 
                 die(json_encode([
-                    'status' => 'error',
-                    'message' => 'Not authorized to view this support department'
+                    'result' => 'success'
                 ]));
 
             } else {
 
-                $result = localAPI('UpdateTicket', [
-                    'ticketid' => $vars['ticketid'],
-                    'status' => 'In Progress',
-                    'flag' => $adminId
-                ]);
-    
-                die(json_encode($result));
+                die(json_encode([
+                    'result' => 'error',
+                    'Admin is not part of the support department that this ticket is under'
+                ]));
 
             }
 
         }
 
-        # URL shows as encoded for some reason, let's fix that or else the get request wont work
+        # URL shows as encoded, let's fix that or else the get request wont work
         $url = str_replace("&amp;", "&", $_SERVER['REQUEST_URI']);
 
         # Start the JavaScript
